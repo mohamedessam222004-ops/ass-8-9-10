@@ -1,0 +1,1 @@
+export {default as messagecontroller} from "./message.controller.js"
