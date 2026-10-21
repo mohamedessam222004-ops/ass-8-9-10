@@ -1,94 +1,149 @@
 import jwt from 'jsonwebtoken'
-import { ACCESS_TOKEN_EXPIRES_IN, ACCESS_TOKEN_SIGNATURE, REFRESH_TOKEN_EXPIRES_IN, REFRESH_TOKEN_SIGNATURE } from '../../modules/config.js'
+import { ACCESS_ADMIN_TOKEN_SIGNATURE, ACCESS_TOKEN_EXPIRES_IN, ACCESS_USER_TOKEN_SIGNATURE, REFRESH_ADMIN_TOKEN_SIGNATURE, REFRESH_TOKEN_EXPIRES_IN, REFRESH_USER_TOKEN_SIGNATURE } from '../../modules/config.js'
 import { BadRequestExeption, NotfoundExeption } from '../exceptions/error.exceptions.js'
 import { findById } from '../reposatry/base.reposatry.js'
 import { usermodel } from '../../db/model/user.model.js'
 import { tokenTypeEnum } from '../enum/security.enum.js'
+import { RoleEnum } from '../enum/user.gender.js'
+
 
 export const createtoken = async ({
     payload = {},
     options = {},
-    secret = ACCESS_TOKEN_SIGNATURE
+    secret = ACCESS_USER_TOKEN_SIGNATURE
 } = {}) => {
-    return jwt.sign(payload, secret, options)
-}
+    return jwt.sign(payload, secret, options);
+};
+
 
 export const verifytoken = async ({
-    token = '',
-    secret = ACCESS_TOKEN_SIGNATURE
+    token = "",
+    secret = ACCESS_USER_TOKEN_SIGNATURE
 } = {}) => {
-    return jwt.verify(token, secret)
-}
+    return jwt.verify(token, secret);
+};
 
-const getsignature = async ({ tokenType = tokenTypeEnum.ACCESS } = {}) => {
-    return tokenType == tokenTypeEnum.ACCESS ? ACCESS_TOKEN_SIGNATURE : REFRESH_TOKEN_SIGNATURE
-}
+
+const getTokenSignatures = async ({
+    role = RoleEnum.USER
+} = {}) => {
+    let signatures;
+
+    switch (role) {
+        case RoleEnum.ADMIN:
+            signatures = {
+                accessSignature: ACCESS_ADMIN_TOKEN_SIGNATURE,
+                refreshSignature: REFRESH_ADMIN_TOKEN_SIGNATURE
+            };
+            break;
+
+        default:
+            signatures = {
+                accessSignature: ACCESS_USER_TOKEN_SIGNATURE,
+                refreshSignature: REFRESH_USER_TOKEN_SIGNATURE
+            };
+            break;
+    }
+
+    return signatures;
+};
+
+
+const getSignature = async ({
+    tokenType = tokenTypeEnum.ACCESS,
+    role = RoleEnum.USER
+} = {}) => {
+    const signatures = await getTokenSignatures({ role });
+
+    return tokenType === tokenTypeEnum.ACCESS
+        ? signatures.accessSignature
+        : signatures.refreshSignature;
+};
+
 
 export const decodeToken = async ({
-    authorization = '',
+    authorization = "",
     tokenType = tokenTypeEnum.ACCESS
 } = {}) => {
-    // 1. التحقق من وجود الـ authorization والتأكد من صيغته واستخراج التوكن الفعلي
-    if (!authorization || !authorization.startsWith('Bearer ')) {
-        throw BadRequestExeption("Invalid or missing authorization format")
-    }
-    const token = authorization.split(' ')[1]
+    const [, token] = authorization.split(" ");
+    const decoded = jwt.decode(token);
+    console.log(decoded);
 
-    if (!token) {
-        throw BadRequestExeption("Token is missing after Bearer")
+    if (!decoded?.aud?.length) {
+        throw BadRequestExeption("missing token payload");
     }
 
-    // 2. التحقق من صحة التوكن المستخلص
-    const payload = await verifytoken({ 
-        token: token, 
-        secret: await getsignature({ tokenType })
-    })
-    console.log("Decoded Payload:", payload);
+    const payload = await verifytoken({
+        token,
+        secret: await getSignature({
+            tokenType,
+            role: decoded.aud[0]
+        })
+    });
 
-   const currentTimeMs = Date.now(); // الوقت الحالي بالميلي ثانية مباشرة
-    const expirationTimeMs = payload?.exp ? payload.exp * 1000 : null; // تحويل وقت الانتهاء من ثواني إلى ميلي ثانية
-
-
-
-    // 3. استخراج معرف المستخدم بأكثر من احتمال (subject أو id أو userId) لمنع ظهور الخطأ
-    const userId = payload?.subject || payload?.id || payload?.userId
-
-    if (!userId) {
-        throw BadRequestExeption("missing token payload")
+    if (!payload?.sub) {
+        throw BadRequestExeption("missing token payload");
     }
 
     const user = await findById({
         model: usermodel,
-        id: userId
-    })
+        id: payload.sub
+    });
 
     if (!user) {
-        throw NotfoundExeption("invalid user")
+        throw NotfoundExeption("Invalid user");
     }
 
-    return { user, payload }
-}
+    return { user, payload };
+};
+
 
 export const createLoginCredentials = async ({
-    payload = {},
+    user,
+    issuer,
     options = {}
-} = {}) => {
+}) => {
+
+    const {
+        accessSignature,
+        refreshSignature
+    } = await getTokenSignatures({
+        role: user.role
+    });
+
     const access_token = await createtoken({
-        payload,
+        payload: {
+            sub: user._id
+        },
+        secret: accessSignature,
         options: {
             ...options,
+            issuer,
+            audience: [user.role],
             expiresIn: ACCESS_TOKEN_EXPIRES_IN
         }
-    })
+    });
 
     const refresh_token = await createtoken({
-        payload,
+        payload: {
+            sub: user._id
+        },
+        secret: refreshSignature,
         options: {
             ...options,
+            issuer,
+            audience: [user.role],
             expiresIn: REFRESH_TOKEN_EXPIRES_IN
-        },
-        secret: REFRESH_TOKEN_SIGNATURE
-    })
+        }
+    });
 
-    return { access_token, refresh_token }
-}
+    console.log({
+        accessSignature,
+        refreshSignature
+    });
+
+    return {
+        access_token,
+        refresh_token
+    };
+};

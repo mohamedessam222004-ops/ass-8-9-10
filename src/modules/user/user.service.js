@@ -1,5 +1,5 @@
-import jwt from "jsonwebtoken";
-import{findById, findByIdAndUpdate} from '../../common/reposatry/base.reposatry.js'
+
+import{ findByIdAndUpdate} from '../../common/reposatry/base.reposatry.js'
 import { usermodel } from "../../db/model/user.model.js";
 import { createLoginCredentials, verifytoken } from "../../common/security/token.security.js";
 import { ACCESS_TOKEN_EXPIRES_IN} from "../config.js";
@@ -16,9 +16,9 @@ export const updateProfile=async(user,data)=>{
    return account
 }
 
-export const rotateToken=async(payload)=>{
+export const rotateToken=async(payload,user,issuer)=>{
 
-const accessExpiresIn=payload.exp * 1000
+const accessExpiresIn=(payload.iat+ACCESS_TOKEN_EXPIRES_IN) * 1000
 const currentTime=Date.now()+(30*60000)
 
 if (currentTime<accessExpiresIn) {
@@ -26,7 +26,7 @@ if (currentTime<accessExpiresIn) {
 }
 
 return await createLoginCredentials(
-   {payload: { subject: payload.subject}}
+   {user,issuer}
 )
 
 }

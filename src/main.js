@@ -8,9 +8,12 @@ import { port } from './modules/config.js';
 import { locks } from 'node:worker_threads';
 import { log } from 'node:console';
 import { encryption, decryption } from './common/security/encryption.security.js';
+import  cors  from "cors";
 const app = express();
 bootstrapdb(app ,port)
+app.use(cors())
 app.use(express.json())
+
 app.all("/",(req, res) => res.status(200).send({message:'welcome to api'}))
 app.use("/auth",authenticationcontroller )
 app.use("/user" ,usercontroller)
