@@ -1,25 +1,36 @@
-import crypto, { Decipheriv } from 'node:crypto'
-import { IV_LENGTH,ENC_KEY } from '../../modules/config.js'
-import { buffer } from 'node:stream/consumers'
+import crypto from "node:crypto";
+import { IV_LENGTH, ENC_KEY } from "../../modules/config.js";
 
-export const encryption= async(plaintext)=>{
-    const iv =crypto.randomBytes(IV_LENGTH)
-     const cipherIv= crypto.createCipheriv('aes-256-cbc',ENC_KEY,iv)
+export const encryption = async (plaintext) => {
+    if (plaintext === undefined || plaintext === null) return null;
+    if (!ENC_KEY) throw new Error("ENC_KEY is missing from environment variables");
 
-     let cipherText=cipherIv.update(plaintext,"utf-8","hex")
-     cipherText+= cipherIv.final("hex")
-console.log({iv,ivstr:iv.toString('hex'),cipherIv ,cipherText:`${iv.toString('hex')}::${cipherText}`});
-return `${iv.toString('hex')}::${cipherText}`
-}
-export const decryption= async(cipherText)=>{
-    const[hexIV,encryptedData]=cipherText.split("::")
-       const iv =Buffer.from(hexIV,'hex')
-     const Decipheriv= crypto.createDecipheriv('aes-256-cbc',ENC_KEY,iv)
-     let plaintext=Decipheriv.update(encryptedData,"hex","utf-8")
-     plaintext+= Decipheriv.final("utf-8")
+    const ivLength = Number(IV_LENGTH);
+    if (ivLength !== 16) throw new Error("IV_LENGTH must be 16 for aes-256-cbc");
 
-return plaintext
-}    
+    const iv = crypto.randomBytes(ivLength);
+    const cipher = crypto.createCipheriv("aes-256-cbc", ENC_KEY, iv);
 
-    
+    let encrypted = cipher.update(String(plaintext), "utf8", "hex");
+    encrypted += cipher.final("hex");
 
+    return iv.toString("hex") + "::" + encrypted;
+};
+
+export const decryption = async (cipherText) => {
+    if (cipherText === undefined || cipherText === null) return null;
+    if (!ENC_KEY) throw new Error("ENC_KEY is missing from environment variables");
+
+    const parts = String(cipherText).split("::");
+    if (parts.length !== 2) throw new Error("Invalid encrypted value");
+
+    const [hexIV, encryptedData] = parts;
+    const iv = Buffer.from(hexIV, "hex");
+    if (iv.length !== 16) throw new Error("Invalid encryption IV");
+
+    const decipher = crypto.createDecipheriv("aes-256-cbc", ENC_KEY, iv);
+    let plaintext = decipher.update(encryptedData, "hex", "utf8");
+    plaintext += decipher.final("utf8");
+
+    return plaintext;
+};
