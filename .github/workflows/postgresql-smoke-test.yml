@@ -27,7 +27,7 @@ jobs:
       NODE_ENV: test
       PORT: 3000
       DB_URI: postgresql://postgres:postgres@localhost:5432/its_db
-      ENC_KEY: 12345678901234567890123456789012
+      ENC_KEY: "0123456789abcdef0123456789abcdef"
       IV_LENGTH: 16
       SALT: 12
       ACCESS_TOKEN_SIGNATURE: test-access-secret-not-for-production
