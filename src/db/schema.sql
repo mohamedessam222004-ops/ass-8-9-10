@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS public.users (
     "lastName" VARCHAR(25) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password TEXT,
-    phone VARCHAR(50),
+    phone TEXT,
     "DOB" TIMESTAMPTZ,
     "confirmEmail" TIMESTAMPTZ,
     image TEXT,
@@ -54,3 +54,6 @@ BEGIN
     END IF;
 END $$;
 
+
+-- Mongoose used an unbounded String for phone; encrypted values are longer than the plain text.
+ALTER TABLE public.users ALTER COLUMN phone TYPE TEXT USING phone::TEXT;
