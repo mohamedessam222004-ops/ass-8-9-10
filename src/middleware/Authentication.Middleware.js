@@ -1,4 +1,3 @@
-
 import { tokenTypeEnum } from "../common/enum/security.enum.js";
 import {
     forbiddenExeption,
@@ -20,6 +19,10 @@ export const authentication = (tokenType = tokenTypeEnum.ACCESS) => {
                 tokenType
             });
 
+            if (!user) {
+                throw unauthorizedExeption("unauthorizedAccount");
+            }
+
             req.user = user;
             req.payload = payload;
 
@@ -32,13 +35,18 @@ export const authentication = (tokenType = tokenTypeEnum.ACCESS) => {
 
 export const authorization = (accessRole) => {
     return async (req, res, next) => {
-        
-            if (req.user.role < accessRole) {
+        try {
+            if (!req.user) {
+                throw unauthorizedExeption("unauthorizedAccount");
+            }
+
+            if (Number(req.user.role) < Number(accessRole)) {
                 throw forbiddenExeption("forbidden Account");
             }
 
             return next();
-        
+        } catch (error) {
             return next(error);
         }
     };
+};

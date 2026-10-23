@@ -1,32 +1,68 @@
+import { pool } from "../../db/connection.db.js";
+import { createLoginCredentials } from "../../common/security/token.security.js";
+import { ACCESS_TOKEN_EXPIRES_IN } from "../config.js";
+import {
+    conflictExeption,
+    NotfoundExeption
+} from "../../common/exceptions/error.exceptions.js";
 
-import{ findByIdAndUpdate} from '../../common/reposatry/base.reposatry.js'
-import { usermodel } from "../../db/model/user.model.js";
-import { createLoginCredentials, verifytoken } from "../../common/security/token.security.js";
-import { ACCESS_TOKEN_EXPIRES_IN} from "../config.js";
-import { conflictExeption } from "../../common/exceptions/error.exceptions.js";
+export const profile = async (account) => account;
 
-export const profile=async(account)=>{
+export const updateProfile = async (user, data = {}) => {
+    const allowedFields = [
+        "firstName",
+        "lastName",
+        "phone",
+        "DOB",
+        "image",
+        "coverImage",
+        "gender"
+    ];
 
-   return account
-}
+    const columns = {
+        firstName: '"firstName"',
+        lastName: '"lastName"',
+        phone: "phone",
+        DOB: '"DOB"',
+        image: "image",
+        coverImage: '"coverImage"',
+        gender: "gender"
+    };
 
-export const updateProfile=async(user,data)=>{
+    const entries = Object.entries(data).filter(([key]) => allowedFields.includes(key));
+    if (!entries.length) return user;
 
-   const account = await findByIdAndUpdate({model:usermodel,id:user._id,update:data})
-   return account
-}
+    const values = [];
+    const setClauses = entries.map(([key, value], index) => {
+        values.push(key === "coverImage" && !Array.isArray(value) ? [value] : value);
+        return columns[key] + " = $" + (index + 1);
+    });
 
-export const rotateToken=async(payload,user,issuer)=>{
+    values.push(user.id ?? user._id);
+    const result = await pool.query(
+        'UPDATE users SET ' + setClauses.join(", ") +
+        ', "updatedAt" = NOW() WHERE id = $' + values.length + " RETURNING *",
+        values
+    );
 
-const accessExpiresIn=(payload.iat+ACCESS_TOKEN_EXPIRES_IN) * 1000
-const currentTime=Date.now()+(30*60000)
+    const account = result.rows[0];
+    if (!account) throw NotfoundExeption("User not found");
 
-if (currentTime<accessExpiresIn) {
-   throw conflictExeption("sorry we cannot create new login credintials while current accsses token still within valid time range")
-}
+    account.id = String(account.id);
+    account._id = account.id;
+    account.username = (account.firstName + " " + account.lastName).trim();
+    return account;
+};
 
-return await createLoginCredentials(
-   {user,issuer}
-)
+export const rotateToken = async (payload, user, issuer) => {
+    const accessExpiresIn = (payload.iat + ACCESS_TOKEN_EXPIRES_IN) * 1000;
+    const currentTime = Date.now() + (30 * 60000);
 
-}
+    if (currentTime < accessExpiresIn) {
+        throw conflictExeption(
+            "sorry we cannot create new login credentials while current access token is still within valid time range"
+        );
+    }
+
+    return createLoginCredentials({ user, issuer });
+};

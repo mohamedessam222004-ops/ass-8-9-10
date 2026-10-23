@@ -1,0 +1,125 @@
+name: PostgreSQL migration checks
+
+on:
+  push:
+    branches: [migration/postgresql]
+  pull_request:
+    branches: [main]
+
+jobs:
+  postgres-smoke-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: its_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d its_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      NODE_ENV: test
+      PORT: 3000
+      DB_URI: postgresql://postgres:postgres@localhost:5432/its_db
+      ENC_KEY: "0123456789abcdef0123456789abcdef"
+      IV_LENGTH: 16
+      SALT: 12
+      ACCESS_TOKEN_SIGNATURE: test-access-secret-not-for-production
+      ACCESS_USER_TOKEN_SIGNATURE: test-user-access-secret-not-for-production
+      ACCESS_ADMIN_TOKEN_SIGNATURE: test-admin-access-secret-not-for-production
+      REFRESH_TOKEN_SIGNATURE: test-refresh-secret-not-for-production
+      REFRESH_USER_TOKEN_SIGNATURE: test-user-refresh-secret-not-for-production
+      REFRESH_ADMIN_TOKEN_SIGNATURE: test-admin-refresh-secret-not-for-production
+      ACCESS_TOKEN_EXPIRES_IN: 18000
+      REFRESH_TOKEN_EXPIRES_IN: 31536000
+      WEB_CLIENT_ID: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Check JavaScript syntax
+        run: find src -type f -name '*.js' -print0 | xargs -0 -n1 node --check
+      - name: Start API
+        run: |
+          node src/main.js > server.log 2>&1 &
+          echo $! > server.pid
+          for i in {1..30}; do
+            if curl --fail --silent http://localhost:3000/ > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat server.log
+          exit 1
+      - name: Test signup, persistence, and login
+        run: |
+          curl --fail --silent --show-error \
+            -X POST http://localhost:3000/auth/signup \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"CI Test","email":"ci-smoke@example.com","password":"Test123456","phone":"01012345678"}' \
+            > signup-response.json
+          node --input-type=module <<'NODE'
+          import pg from "pg";
+          const pool = new pg.Pool({ connectionString: process.env.DB_URI });
+          try {
+            const result = await pool.query(
+              "SELECT id, phone FROM public.users WHERE email = $1 AND password IS NOT NULL",
+              ["ci-smoke@example.com"]
+            );
+            if (result.rowCount !== 1) {
+              throw new Error("Signup did not persist exactly one user");
+            }
+            const { decryption } = await import("./src/common/security/encryption.security.js");
+            if (await decryption(result.rows[0].phone) !== "01012345678") {
+              throw new Error("Encrypted phone did not round-trip");
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
+          curl --fail --silent --show-error \
+            -X POST http://localhost:3000/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"ci-smoke@example.com","password":"Test123456"}' \
+            > login-response.json
+      - name: Test JWT profile and profile update
+        run: |
+          ACCESS_TOKEN=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("login-response.json", "utf8")).data.access_token)')
+          curl --fail --silent --show-error \
+            http://localhost:3000/user \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            > profile-response.json
+          curl --fail --silent --show-error \
+            -X PATCH http://localhost:3000/user \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -d '{"firstName":"Updated"}' \
+            > profile-update-response.json
+          node --input-type=module <<'NODE'
+          import pg from "pg";
+          const pool = new pg.Pool({ connectionString: process.env.DB_URI });
+          try {
+            const result = await pool.query(
+              "SELECT id FROM public.users WHERE email = $1 AND \"firstName\" = $2",
+              ["ci-smoke@example.com", "Updated"]
+            );
+            if (result.rowCount !== 1) {
+              throw new Error("Profile update did not persist");
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
+      - name: Stop API
+        if: always()
+        run: if [ -f server.pid ]; then kill "$(cat server.pid)" || true; fi
