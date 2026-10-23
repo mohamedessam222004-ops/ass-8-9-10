@@ -38,8 +38,7 @@ function normalizeData(data = {}) {
     }
     delete output.username;
     if (output.email !== undefined) output.email = normalizeEmail(output.email);
-    if (output.coverImage === undefined) output.coverImage = [];
-    else if (!Array.isArray(output.coverImage)) output.coverImage = [output.coverImage];
+    if (output.coverImage !== undefined && !Array.isArray(output.coverImage)) output.coverImage = [output.coverImage];
     return output;
 }
 
