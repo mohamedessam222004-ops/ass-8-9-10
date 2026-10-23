@@ -54,4 +54,3 @@ BEGIN
     END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS users_email_lookup_idx ON public.users (email);
