@@ -88,6 +88,34 @@ jobs:
             -H 'Content-Type: application/json' \
             -d '{"email":"ci-smoke@example.com","password":"Test123456"}' \
             > login-response.json
+      - name: Test JWT profile and profile update
+        run: |
+          ACCESS_TOKEN=$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("login-response.json", "utf8")).data.access_token)')
+          curl --fail --silent --show-error \
+            http://localhost:3000/user \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            > profile-response.json
+          curl --fail --silent --show-error \
+            -X PATCH http://localhost:3000/user \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -d '{"firstName":"Updated"}' \
+            > profile-update-response.json
+          node --input-type=module <<'NODE'
+          import pg from "pg";
+          const pool = new pg.Pool({ connectionString: process.env.DB_URI });
+          try {
+            const result = await pool.query(
+              "SELECT id FROM public.users WHERE email = $1 AND \\"firstName\\" = $2",
+              ["ci-smoke@example.com", "Updated"]
+            );
+            if (result.rowCount !== 1) {
+              throw new Error("Profile update did not persist");
+            }
+          } finally {
+            await pool.end();
+          }
+          NODE
       - name: Stop API
         if: always()
         run: if [ -f server.pid ]; then kill "$(cat server.pid)" || true; fi
