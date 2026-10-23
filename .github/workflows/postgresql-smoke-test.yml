@@ -66,18 +66,22 @@ jobs:
           curl --fail --silent --show-error \
             -X POST http://localhost:3000/auth/signup \
             -H 'Content-Type: application/json' \
-            -d '{"username":"CI Test","email":"ci-smoke@example.com","password":"Test123456"}' \
+            -d '{"username":"CI Test","email":"ci-smoke@example.com","password":"Test123456","phone":"01012345678"}' \
             > signup-response.json
           node --input-type=module <<'NODE'
           import pg from "pg";
           const pool = new pg.Pool({ connectionString: process.env.DB_URI });
           try {
             const result = await pool.query(
-              "SELECT id FROM public.users WHERE email = $1 AND password IS NOT NULL",
+              "SELECT id, phone FROM public.users WHERE email = $1 AND password IS NOT NULL",
               ["ci-smoke@example.com"]
             );
             if (result.rowCount !== 1) {
               throw new Error("Signup did not persist exactly one user");
+            }
+            const { decryption } = await import("./src/common/security/encryption.security.js");
+            if (await decryption(result.rows[0].phone) !== "01012345678") {
+              throw new Error("Encrypted phone did not round-trip");
             }
           } finally {
             await pool.end();
