@@ -3,7 +3,7 @@ import { pool } from "../../db/connection.db.js";
 const COLUMNS = {
     id: "id", _id: "id",
     firstName: '"firstName"', lastName: '"lastName"',
-    username: 'concat_ws(\\' \\', "firstName", "lastName")',
+    username: "concat_ws(' ', \"firstName\", \"lastName\")",
     email: "email", password: "password", phone: "phone",
     DOB: '"DOB"', confirmEmail: '"confirmEmail"',
     image: "image", Image: "image", coverImage: '"coverImage"',
