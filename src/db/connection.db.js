@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import pg from "pg";
 import { db_uri } from "../modules/config.js";
 
@@ -23,13 +24,17 @@ pool.on("error", (error) => {
 export const bootstrapdb = async (app, port) => {
     try {
         await pool.query("SELECT 1");
-        console.log("PostgreSQL connected successfully");
+
+        const schema = await readFile(new URL("./schema.sql", import.meta.url), "utf8");
+        await pool.query(schema);
+
+        console.log("PostgreSQL connected successfully and schema is ready");
 
         return app.listen(port, () => {
-            console.log(`Example app listening on port ${port}`);
+            console.log("Example app listening on port " + port);
         });
     } catch (error) {
-        console.error("Failed to connect to PostgreSQL:", error.message);
+        console.error("Failed to connect to PostgreSQL or initialize schema:", error.message);
         await pool.end();
         throw error;
     }
